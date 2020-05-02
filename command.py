@@ -16,8 +16,13 @@ def main():
 
     message = ''
     while message != 'EXIT':
-        message = input("Insert Command:\n")
-        client_socket.sendto(message.encode(), (server, 8821))
+        message = input("Insert E to exit, D to delete, or the name of a file in this directory for the query.\n")
+        if message == "E" or message == "D":
+            client_socket.sendto(message.encode(), (server, 8821))
+        else:
+            file = open(message, "rb")
+            SendData = file.read(1024)
+            client_socket.send(SendData)
         data = client_socket.recv(1024)
         print("received:", data)
 
