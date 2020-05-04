@@ -2,17 +2,19 @@
 These files extract data specific to the MySQL database setup in **sql_creation.sql**
 
 ## payload.py
-Implant that is injected into the target machine as pyconfig.py.
+The implant that is injected into the target machine as pyconfig.py. It does the following:
 
-1. Uses **requirements.txt** (https://github.com/danielmiessler/SecLists/blob/master/Passwords/Leaked-Databases/rockyou-75.txt) as wordlist to crack the MySQL password.
-2. Opens a socket that listens for a connection from attack machine. Executes commands as described below.
+1. Uses the wordlist **requirements.txt** (https://github.com/danielmiessler/SecLists/blob/master/Passwords/Leaked-Databases/rockyou-75.txt) to crack the MySQL password.
+2. Opens a socket that listens for a connection from the attack machine and executes the commands received, as described below.
 
 ## command.py
-Command & control script which is run from the attack machine after payload.py is run. 
+The command & control script which is run from the attack machine after payload.py is run (persistently) from the target.
 
-- Path to a file containing an obfuscated sql query (first and last character of every line) to receive results of query in ICMP ping. e.g. **sql.txt** which contains the query *select * from patients where name = 'Our Guy';*
+It takes the following commands that are then sent to the target machine:
+- Path to a file containing an obfuscated sql query, the results of which are received in an ICMP ping. 
+    - the file is obscured in that the query is the first and last character of every line e.g. **sql.txt** which contains the query *select * from patients where name = 'Our Guy';*
 - 'E' to exit socket connection
 - 'D' to delete trace of payload from target machine
 
 ## extract_exfil.py
-Extraction script which takes the .pcap Wireshark file (argument **-f**) containing the ICMP ping and decrypts the data.
+The extraction script which takes a .pcap Wireshark file (as argument **-f**) containing the ICMP ping, and decrypts the data.
